@@ -16,3 +16,6 @@ I don't believe this would be too difficult to automate in the cloud, although I
 - add support for uploading numerbay submissions
 - add more example models, and refactor/comment more code for increased readability
 - benchmark diagnostic functions and maximize performance
+
+### My Models
+If you would like to see my Numerai models here is a list of links to each of their pages: [MesozoicMetallurgist Numerai Model List](https://docs.google.com/document/d/19P_e8ahJUr6HbaOfFAmJSLXcXZWgzSj3lf_zyecBatM/edit?usp=sharing)
