@@ -27,8 +27,8 @@ class CustomModel:
             cls.load()
                 
         # get indices of features used in model
-        features_idxs = np.intersect1d(features, cls.modeldata['features'], return_indices=True)[1]
-        X = X[:,features_idxs]
+        feature_idxs = np.arange(len(features))[np.isin(features, cls.modeldata['features'])]
+        X = X[:,feature_idxs]
 
         # predict
         P = []
