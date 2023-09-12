@@ -111,12 +111,12 @@ def run_diagnostics(P,Y,X,I, featexp=False, fnc=True, print_output=True, graph_c
     diagnostics.update(ts_stats(es,'corrv2'))
     nes = np.empty(len(I)); NP = np.empty(len(P))
     if fnc:
-        for E in I: NP[E] = neutralize(P[E],X[E])
+        for E in I: NP[E] = neutralize(P[E],X.iloc[E].values.astype(np.float32))
         for i in range(len(nes)): nes[i] = rank_corr(NP[I[i]],Y[I[i]])
         raw_corrs['fnc'] = nes
         diagnostics.update(ts_stats(nes,'fnc'))
     if featexp: 
-        feature_exposures = np.array([col_corr(P[E],X[E]) for E in I])
+        feature_exposures = np.array([col_corr(P[E],X.iloc[E].values.astype(np.float32)) for E in I])
         diagnostics['mean abs feature exposure'] = np.nanmean(np.abs(feature_exposures))
         diagnostics['max abs feature exposure'] = np.nanmax(np.abs(np.nanmean(feature_exposures, axis=0)))
         diagnostics['sdev feature exposure'] = np.nanmean(np.nanstd(feature_exposures, axis=0))
@@ -129,16 +129,28 @@ def run_diagnostics(P,Y,X,I, featexp=False, fnc=True, print_output=True, graph_c
             # raw_corrs[k+' corr (preds)'] = ces
             diagnostics[k+' corr (preds) mean'] = np.nanmean(ces)
             diagnostics[k+' corr (preds) sdev'] = np.nanstd(ces)
-            # ces = np.empty(len(I))
-            # for i in range(len(ces)): ces[i] = rank_corr(v[I[i]],Y[I[i]])
-            # raw_corrs[k+' corr (targs)'] = ces
+            ces = np.empty(len(I))
+            for i in range(len(ces)): ces[i] = numerai_corr(v[I[i]],Y[I[i]])
+            raw_corrs[k+' corr (targs)'] = ces
+            diagnostics[k+' corr (targs) mean'] = np.nanmean(ces)
+            diagnostics[k+' corr (targs) sdev'] = np.nanstd(ces)
     if print_output:
         for k,v in diagnostics.items(): print(k,':',round(v,6))
     if graph_corrs:
         plt.figure(figsize=(14,6))
-        for k,v in raw_corrs.items(): plt.plot(v, label=k)
+        for k,v in raw_corrs.items(): 
+            if 'targs' not in k: plt.plot(v, label=k)
         # add a zero line
-        plt.legend()
         plt.plot([0,len(I)],[0,0], color='white', linestyle='--')
+        plt.legend()
         plt.show()
+
+        # add a second plot with cumulative 1xcorr returns
+        plt.figure(figsize=(14,6))
+        for k,v in raw_corrs.items(): plt.plot(np.cumsum(v), label=k)
+        # add a zero line
+        plt.plot([0,len(I)],[0,0], color='white', linestyle='--')
+        plt.legend()
+        plt.show()
+
     return diagnostics, raw_corrs

@@ -26,14 +26,12 @@ class CustomModel:
         if not cls.isLoaded:
             cls.load()
                 
-        # get indices of features used in model
-        feature_idxs = np.arange(len(features))[np.isin(features, cls.modeldata['features'])]
-        X = X[:,feature_idxs]
+        X = X[cls.modeldata['features']]
 
         # predict
         P = []
-        for E in range(len(I)):
-            P.append(cls.modeldata['lgbm_model'].predict(X[I[E]]))
+        for E in range(len(I)): # note: X will have to be rescaled from 0-4 if not trained as such!
+            P.append(cls.modeldata['lgbm_model'].predict(X.iloc[I[E]].values.astype(np.float32)))
         P = np.concatenate(P, axis=-1)
 
         if clear: cls.clear()

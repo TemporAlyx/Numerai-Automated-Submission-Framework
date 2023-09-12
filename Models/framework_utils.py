@@ -5,6 +5,8 @@ import json, time, os, sys, gc
 from scipy import stats
 from IPython.display import clear_output
 
+import numerapi
+
 def percFin(iterator,listlen,rounded=3):
     clear_output(wait=True)
     print("Processing.. ",round(((iterator+1)/listlen) * 100,rounded),'%',flush=True)
@@ -49,12 +51,31 @@ def get_numerapi_config():
             secret_key = config['key']
             print('numerapi ID and Key loaded from config.json')
             return public_id, secret_key
+        
+def get_napi_and_models(public_id, secret_key):
+    napi = None
+    modelnameids = None
+    napi_success = False; loops = 0
+    while not napi_success:
+        try:
+            napi = numerapi.NumerAPI(public_id=public_id, secret_key=secret_key)
+            modelnameids = napi.get_models()
+            napi_success = True
+        except:
+            loops += 1
+            if loops > 10:
+                print("NumerAPI connection failed, exiting...")
+                sys.exit(); # maybe add some email notification here?
+            print("NumerAPI connection failed, retrying...")
+            time.sleep(5)
+    return napi, modelnameids
 
-train_files = ['train.parquet', 'validation.parquet',
+
+train_files = ['train_int8.parquet', 'validation_int8.parquet',
          'validation_example_preds.parquet',
          'features.json', 'meta_model.parquet'] 
 
-live_files = ['live.parquet', 'live_example_preds.parquet',
+live_files = ['live_int8.parquet', 'live_example_preds.parquet',
                'features.json']
 
 def chk_rm_ds(ds_file, dataset_loc):
@@ -72,7 +93,8 @@ def get_update_data(napi, dataset_loc, ds_version, files):
     currentRound = napi.get_current_round()
     with open(os.path.join(dataset_loc, 'lastRoundAcq.txt'), 'r') as f:
         lastRound = int(f.read())
-    if lastRound != currentRound:
+    newRound = lastRound != currentRound
+    if newRound:
         print('Dataset not up to date, retrieving dataset... ',end='')
         for ds_file in files: 
             if currentRound - lastRound > 5 or 'train' not in ds_file: # avoid redownloading train too often
@@ -99,13 +121,14 @@ def get_update_data(napi, dataset_loc, ds_version, files):
         with open(dataset_loc + '/lastRoundAcq.txt', 'w') as f:
             f.write(str(currentRound))
     print("Datasets are up to date.\nCurrent Round:", currentRound)
-    return currentRound
+    return currentRound, newRound
 
-def get_update_training_data(napi, dataset_loc, ds_version="v4.1"):
+def get_update_training_data(napi, dataset_loc, ds_version):
     return get_update_data(napi, dataset_loc, ds_version, train_files)
 
-def get_update_live_data(napi, dataset_loc, ds_version="v4.1"):
+def get_update_live_data(napi, dataset_loc, ds_version):
     return get_update_data(napi, dataset_loc, ds_version, live_files)
+
 
 def processData(df_loc, return_fts=False):
     df = pd.read_parquet(df_loc, engine="fastparquet")
@@ -113,10 +136,11 @@ def processData(df_loc, return_fts=False):
     I = [(np.arange(len(E), dtype=np.int64)[x==E]) for x in uE]
     features = [f for f in list(df.iloc[0].index) if "feature" in f]
     targets = [f for f in list(df.iloc[0].index) if "target" in f]
-    df = df[features+targets]; df = df.to_numpy(dtype=np.float16, na_value=0.5)
-    X = df[:,:-len(targets)]; Y = df[:,-len(targets):]; del df; gc.collect()
-    if return_fts: return X, Y, I, features, targets
-    return X, Y, I
+    # df = df[features+targets]; df = df.to_numpy(dtype=np.float16, na_value=0.5)
+    # X = df[:,:-len(targets)]; Y = df[:,-len(targets):]; del df; gc.collect()
+    if return_fts: return df, I, features, targets
+    return df, I
+
 
 def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=2):
     name = Model.name
