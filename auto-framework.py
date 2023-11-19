@@ -15,8 +15,8 @@ ds_version = "v4.2"
 dataset_loc = os.path.join(os.getcwd(), 'live_datasets', ds_version)
 currentRound, isnewRound = get_update_live_data(napi, dataset_loc, ds_version)
 
-if not isnewRound:
-    sys.exit()
+# if not isnewRound:
+#     sys.exit()
 
 np.random.seed(42)
 print("# Loading data... ",end='')
@@ -29,6 +29,13 @@ with open(os.path.join(dataset_loc, "features.json"), "r") as f:
     
 small_features = feature_metadata['feature_sets']['small']
 medium_features = feature_metadata['feature_sets']['medium']
+fncv3_features = feature_metadata['feature_sets']['fncv3_features']
+serenity_features = feature_metadata['feature_sets']['serenity']
+
+np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'small_features.npy'), small_features)
+np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'medium_features.npy'), medium_features)
+np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'fncv3_features.npy'), fncv3_features)
+np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'serenity_features.npy'), serenity_features)
 
 ELP = pd.read_parquet(os.path.join(dataset_loc, 'live_example_preds.parquet'), engine="fastparquet")
 ids = ELP.index.values
@@ -58,18 +65,23 @@ print(model_modules)
 
 
 def build_and_submit_model(Model):
-    if Model.ensembled:
-        LP = Model.predict(live, LI, features, submissions)
-    else:
-        LP = Model.predict(live, LI, features)
-    LP = erarank01(LP, LI)
+    try:
+        if Model.ensembled:
+            LP = Model.predict(live, LI, features, submissions)
+        else:
+            LP = Model.predict(live, LI, features)
+        LP = erarank01(LP, LI)
 
-    n_submissions, n_response_keys = submitPredictions(
-        LP, Model, modelnameids, ids, currentRound, napi
-    )
-    if len(n_submissions) > 0:
-        submissions.update(n_submissions)
-        upload_keys.update(n_response_keys)
+        n_submissions, n_response_keys = submitPredictions(
+            LP, Model, modelnameids, ids, currentRound, napi
+        )
+        if len(n_submissions) > 0:
+            submissions.update(n_submissions)
+            upload_keys.update(n_response_keys)
+    except Exception as e:
+        print(e)
+        print("Model {} failed".format(Model.name))
+        print()
 
 for Model in Mods:
     if Model.ensembled:
@@ -79,7 +91,6 @@ for Model in Mods:
         
 # reload saved submissions for ensembles
 submissions['example_model'] = ELP
-model_modules = Models.models
 n_submissions, model_modules = get_currentRound_submissions(
     currentRound, modelnameids, model_modules
 )

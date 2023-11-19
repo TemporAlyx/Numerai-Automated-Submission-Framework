@@ -7,7 +7,7 @@ import lightgbm
 
 
 class CustomModel:
-    name = 'LightGBM'
+    name = os.path.splitext(os.path.basename(__file__))[0] # use filename as model name
     submit_on = ['your_model_name_here']
     ensembled = False
     modeldata_directory = os.path.join(os.getcwd(), 'Models', 'Modeldata')

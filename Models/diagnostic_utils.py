@@ -63,10 +63,10 @@ def neutralize(target, by, proportion=1.0):
     scores = target - (proportion * exposures.dot(np.linalg.pinv(exposures).dot(target)))
     return scores / scores.std()
 
-# def tf_neutralize(target, by):
-#     exposures = tf.concat([by, tf.reshape(tf.reduce_mean(target) * tf.ones(tf.shape(by)[0], dtype=target.dtype), [-1,1])], axis=1)
-#     invexp = tf.linalg.pinv(exposures)
-#     diff = tf.matmul(exposures,tf.matmul(invexp,target))
+# def tf_neutralize(target, data):
+#     target = target - tf.reduce_mean(target, axis=-2, keepdims=True)
+#     invexp = tf.cast(tf.linalg.pinv(tf.cast(data, tf.float32)), target.dtype)
+#     diff = tf.matmul(data,tf.matmul(invexp,target))
 #     scores = target - diff
 #     return scores / tf.math.reduce_std(scores)
 

@@ -147,6 +147,8 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
     sub_names = Model.submit_on
     if type(sub_names) != list: 
         sub_names = [sub_names]; LP = LP.reshape(-1, 1)
+    elif len(LP.shape) == 1:
+        LP = LP.reshape(-1, 1)
     print('building predictions for', name, sub_names)
 
     submissions = {}
@@ -158,12 +160,12 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
         joined = pd.DataFrame(liveids, columns=['id']).join(results_df)
         if verbose > 1: print(joined.head(3))
 
-        subName = "submission"+name+"_"+upload[:3]+"_"+str(currentRound)+".csv"
+        subName = "submission"+name+"_"+upload[:5]+"_"+str(currentRound)+".csv"
         if verbose > 0: print("# Writing predictions to "+subName+"... ",end="")
         joined.to_csv("Submissions/"+subName, index=False)
         upload_key = None
         if not len(upload) > 0:
-            if verbose > 1: print("No upload for these predictions. (base model)")
+            if verbose > 1: print("No upload for these predictions. (may be base model)")
         else:
             napi_success = False; loops = 0
             while not napi_success:
@@ -203,7 +205,7 @@ def get_currentRound_submissions(currentRound, modelnameids, modelmodules):
     for i in range(len(subs)):
         d = pd.read_csv('Submissions\\'+subs[i][-1], header=0).values[:,1].astype(float)
         if len(subs[i][1]) > 0:
-            full_name = [x for x in list(modelnameids.keys()) if subs[i][1] == x[:3]][0]
+            full_name = [x for x in list(modelnameids.keys()) if subs[i][1] == x[:len(subs[i][1])]][0]
         else:
             full_name = subs[i][0]
         submissions[full_name] = d
