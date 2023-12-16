@@ -57,13 +57,14 @@ def col_corr(preds, targs): # ~pearson correlation, optimized for multiple colum
     
     return prod / np.sqrt(ddiffs2 * idiff2)
 
-
 def neutralize(target, by, proportion=1.0):
-    exposures = np.hstack((by,np.repeat(np.mean(target), len(by)).reshape(-1, 1)))
-    scores = target - (proportion * exposures.dot(np.linalg.pinv(exposures).dot(target)))
+    by = by - np.mean(by)
+    target = target - np.mean(target)
+    scores = target - (proportion * by.dot(np.linalg.pinv(by).dot(target)))
     return scores / scores.std()
 
 # def tf_neutralize(target, data):
+#     data = data - tf.reduce_mean(data, axis=-2, keepdims=True)
 #     target = target - tf.reduce_mean(target, axis=-2, keepdims=True)
 #     invexp = tf.cast(tf.linalg.pinv(tf.cast(data, tf.float32)), target.dtype)
 #     diff = tf.matmul(data,tf.matmul(invexp,target))

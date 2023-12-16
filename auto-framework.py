@@ -15,27 +15,18 @@ ds_version = "v4.2"
 dataset_loc = os.path.join(os.getcwd(), 'live_datasets', ds_version)
 currentRound, isnewRound = get_update_live_data(napi, dataset_loc, ds_version)
 
-# if not isnewRound:
-#     sys.exit()
+if not isnewRound:
+    sys.exit()
 
 np.random.seed(42)
 print("# Loading data... ",end='')
 
 # live submission data L* | X = features, P = prediction, I = era indices
-live, LI, features, targets = processData(os.path.join(dataset_loc, 'live_int8.parquet'), return_fts=True)
+live, LI = processData(os.path.join(dataset_loc, 'live_int8.parquet'))
 
 with open(os.path.join(dataset_loc, "features.json"), "r") as f:
     feature_metadata = json.load(f)
-    
-small_features = feature_metadata['feature_sets']['small']
-medium_features = feature_metadata['feature_sets']['medium']
-fncv3_features = feature_metadata['feature_sets']['fncv3_features']
-serenity_features = feature_metadata['feature_sets']['serenity']
-
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'small_features.npy'), small_features)
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'medium_features.npy'), medium_features)
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'fncv3_features.npy'), fncv3_features)
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'serenity_features.npy'), serenity_features)
+feature_sets = feature_metadata['feature_sets']
 
 ELP = pd.read_parquet(os.path.join(dataset_loc, 'live_example_preds.parquet'), engine="fastparquet")
 ids = ELP.index.values
@@ -60,16 +51,16 @@ n_submissions, model_modules = get_currentRound_submissions(
 )
 submissions.update(n_submissions)
 
-Mods = [Models.__dict__[x].CustomModel for x in model_modules]
+Mods = [Models.__dict__[x] for x in model_modules]
 print(model_modules)
 
 
 def build_and_submit_model(Model):
     try:
         if Model.ensembled:
-            LP = Model.predict(live, LI, features, submissions)
+            LP = Model.predict(live, LI, feature_sets, submissions)
         else:
-            LP = Model.predict(live, LI, features)
+            LP = Model.predict(live, LI, feature_sets)
         LP = erarank01(LP, LI)
 
         n_submissions, n_response_keys = submitPredictions(

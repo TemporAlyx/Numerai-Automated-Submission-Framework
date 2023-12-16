@@ -130,15 +130,15 @@ def get_update_live_data(napi, dataset_loc, ds_version):
     return get_update_data(napi, dataset_loc, ds_version, live_files)
 
 
-def processData(df_loc, return_fts=False):
+def processData(df_loc, return_targets=False):
     df = pd.read_parquet(df_loc, engine="fastparquet")
     E = df['era'].values; uE = pd.unique(E)
     I = [(np.arange(len(E), dtype=np.int64)[x==E]) for x in uE]
-    features = [f for f in list(df.iloc[0].index) if "feature" in f]
+    # features = [f for f in list(df.iloc[0].index) if "feature" in f]
     targets = [f for f in list(df.iloc[0].index) if "target" in f]
     # df = df[features+targets]; df = df.to_numpy(dtype=np.float16, na_value=0.5)
     # X = df[:,:-len(targets)]; Y = df[:,-len(targets):]; del df; gc.collect()
-    if return_fts: return df, I, features, targets
+    if return_targets: return df, I, targets
     return df, I
 
 
