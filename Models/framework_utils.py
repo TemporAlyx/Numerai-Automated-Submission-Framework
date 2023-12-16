@@ -130,7 +130,7 @@ def get_update_live_data(napi, dataset_loc, ds_version):
     return get_update_data(napi, dataset_loc, ds_version, live_files)
 
 
-def processData(df_loc, return_targets=False):
+def processData(df_loc, return_target_names=False):
     df = pd.read_parquet(df_loc, engine="fastparquet")
     E = df['era'].values; uE = pd.unique(E)
     I = [(np.arange(len(E), dtype=np.int64)[x==E]) for x in uE]
@@ -138,7 +138,7 @@ def processData(df_loc, return_targets=False):
     targets = [f for f in list(df.iloc[0].index) if "target" in f]
     # df = df[features+targets]; df = df.to_numpy(dtype=np.float16, na_value=0.5)
     # X = df[:,:-len(targets)]; Y = df[:,-len(targets):]; del df; gc.collect()
-    if return_targets: return df, I, targets
+    if return_target_names: return df, I, targets
     return df, I
 
 
@@ -160,7 +160,7 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
         joined = pd.DataFrame(liveids, columns=['id']).join(results_df)
         if verbose > 1: print(joined.head(3))
 
-        subName = "submission"+name+"_"+upload[:5]+"_"+str(currentRound)+".csv"
+        subName = "submission_"+name+"_"+upload+"_"+str(currentRound)+".csv"
         if verbose > 0: print("# Writing predictions to "+subName+"... ",end="")
         joined.to_csv("Submissions/"+subName, index=False)
         upload_key = None
@@ -187,30 +187,23 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
         if verbose > 1: print("done")
     return submissions, response_keys
 
-def get_currentRound_submissions(currentRound, modelnameids, modelmodules):
+
+def get_currentRound_submissions(currentRound, modelmodules, avoid_resubmissions=True):
+    submissions = {}
     if not os.path.exists('Submissions'): 
         os.makedirs('Submissions')
-        subs = []
     else:
-        subs = os.listdir('Submissions')
-        sub_files = [x for x in subs if str(currentRound) in x and 'submission' in x]
-        subs = [x.split('_')[:-1] for x in sub_files]
-        subs = [x[-2:] if len(x) > 2 else x for x in subs]
-        for i in range(len(subs)):
-            subs[i][0] = subs[i][0][10:]
-            subs[i].append(sub_files[i])
-        subs = np.array(subs)
+        sub_files = os.listdir('Submissions')
+        sub_files = [x for x in sub_files if str(currentRound) in x and 'submission' in x]
+        sub_names = [x.split('_')[1:-1] for x in sub_files]
+        for i in range(len(sub_names)):
+            model_name, upload_name = sub_names[0], sub_names[1]
     
-    submissions = {}
-    for i in range(len(subs)):
-        d = pd.read_csv('Submissions\\'+subs[i][-1], header=0).values[:,1].astype(float)
-        if len(subs[i][1]) > 0:
-            full_name = [x for x in list(modelnameids.keys()) if subs[i][1] == x[:len(subs[i][1])]][0]
-        else:
-            full_name = subs[i][0]
-        submissions[full_name] = d
+            d = pd.read_csv('Submissions\\'+sub_files, header=0).values[:,1].astype(float)
+            submissions[upload_name] = d
         
-        if subs[i][0] in modelmodules:
-            modelmodules.remove(subs[i][0])
-
+    if avoid_resubmissions:
+        for model in modelmodules:
+            if all([upload_name in submissions.keys() for upload_name in model.submit_on]):
+                modelmodules.remove(model)
     return submissions, modelmodules

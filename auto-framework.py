@@ -28,9 +28,8 @@ with open(os.path.join(dataset_loc, "features.json"), "r") as f:
     feature_metadata = json.load(f)
 feature_sets = feature_metadata['feature_sets']
 
-ELP = pd.read_parquet(os.path.join(dataset_loc, 'live_example_preds.parquet'), engine="fastparquet")
-ids = ELP.index.values
-ELP = ELP.values[:,0]
+BLP = pd.read_parquet(os.path.join(dataset_loc, 'live_benchmark_models.parquet'),engine="fastparquet")
+ids = BLP.index.values
 
 gc.collect()
 print("done")
@@ -40,9 +39,8 @@ import Models
 
 submissions = {}
 upload_keys = {}
-EMods = []
 
-submissions['example_model'] = ELP
+submissions['example_model'] = BLP['V42_LGBM_CT_BLEND']
 
 model_modules = Models.models
 
@@ -51,6 +49,7 @@ n_submissions, model_modules = get_currentRound_submissions(
 )
 submissions.update(n_submissions)
 
+EnsembledMods = []
 Mods = [Models.__dict__[x] for x in model_modules]
 print(model_modules)
 
@@ -76,16 +75,8 @@ def build_and_submit_model(Model):
 
 for Model in Mods:
     if Model.ensembled:
-        EMods.append(Model) # wait until other models are done for ensembles
+        EnsembledMods.append(Model) # wait until other models are done for ensembles
     else:
         build_and_submit_model(Model)
-        
-# reload saved submissions for ensembles
-submissions['example_model'] = ELP
-n_submissions, model_modules = get_currentRound_submissions(
-    currentRound, modelnameids, model_modules
-)
-submissions.update(n_submissions)
-
-for Model in EMods:
+for Model in EnsembledMods:
     build_and_submit_model(Model)
