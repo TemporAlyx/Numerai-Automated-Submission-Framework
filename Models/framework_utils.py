@@ -182,7 +182,7 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
                     print("Upload for "+upload+" failed, retrying... ",end="")
                     time.sleep(4)
             if verbose > 0: print(upload_key)
-        submissions[upload] = joined
+        submissions[upload] = LP[:,i]
         response_keys[upload] = upload_key
         if verbose > 1: print("done")
     return submissions, response_keys
@@ -197,13 +197,60 @@ def get_currentRound_submissions(currentRound, modelmodules, avoid_resubmissions
         sub_files = [x for x in sub_files if str(currentRound) in x and 'submission' in x]
         sub_names = [x.split('_')[1:-1] for x in sub_files]
         for i in range(len(sub_names)):
-            model_name, upload_name = sub_names[0], sub_names[1]
+            sub_name = sub_names[i]
+            model_name, upload_name = sub_name[0], sub_name[1]
     
-            d = pd.read_csv('Submissions\\'+sub_files, header=0).values[:,1].astype(float)
+            d = pd.read_csv('Submissions\\'+sub_files[i], header=0).values[:,1].astype(float)
             submissions[upload_name] = d
         
     if avoid_resubmissions:
+        remove = []
         for model in modelmodules:
             if all([upload_name in submissions.keys() for upload_name in model.submit_on]):
-                modelmodules.remove(model)
+                remove.append(model)
+        for model in remove:
+            modelmodules.remove(model)
     return submissions, modelmodules
+
+
+def get_validation_predictions():
+    predictions = {}
+    if not os.path.exists('Validations'): 
+        os.makedirs('Validations')
+    else:
+        sub_files = os.listdir('Validations')
+        sub_files = [x for x in sub_files if 'validation' in x]
+        sub_names = [x.split('_')[1:] for x in sub_files]
+        for i in range(len(sub_names)):
+            sub_name = sub_names[i]
+            model_name, upload_name = sub_name[0], sub_name[1]
+    
+            d = pd.read_csv('Submissions\\'+sub_files, header=0).values[:,1].astype(float)
+            predictions[sub_name] = d
+    return predictions
+
+
+def saveValidationPredictions(P, Model, ids, verbose=2):
+    name = Model.name
+    sub_names = Model.submit_on
+    if type(sub_names) != list: 
+        sub_names = [sub_names]; P = P.reshape(-1, 1)
+    elif len(P.shape) == 1:
+        P = P.reshape(-1, 1)
+    print('saving validation predictions for', name, sub_names)
+
+    predictions = {}
+
+    for i in range(len(sub_names)):
+        upload = sub_names[i]
+        results_df = pd.DataFrame(data={'prediction' : P[:,i]})
+        joined = pd.DataFrame(ids, columns=['id']).join(results_df)
+        if verbose > 1: print(joined.head(3))
+
+        subName = "validation_"+name+"_"+upload+".csv"
+        if verbose > 0: print("# Writing predictions to "+subName+"... ",end="")
+        joined.to_csv("Validations/"+subName, index=False)
+        predictions[upload] = joined
+        if verbose > 1: print("done")
+
+    return predictions

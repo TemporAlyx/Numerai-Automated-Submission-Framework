@@ -40,18 +40,15 @@ import Models
 submissions = {}
 upload_keys = {}
 
-submissions['example_model'] = BLP['V42_LGBM_CT_BLEND']
+submissions['example_model'] = BLP['v42_teager_plus_cyrus']
 
-model_modules = Models.models
+model_modules = [Models.__dict__[x] for x in Models.models]
 
-n_submissions, model_modules = get_currentRound_submissions(
-    currentRound, modelnameids, model_modules
-)
+n_submissions, model_modules = get_currentRound_submissions(currentRound, model_modules,
+                                                            avoid_resubmissions=True)
 submissions.update(n_submissions)
 
-EnsembledMods = []
-Mods = [Models.__dict__[x] for x in model_modules]
-print(model_modules)
+print([x.name for x in model_modules])
 
 
 def build_and_submit_model(Model):
@@ -73,10 +70,7 @@ def build_and_submit_model(Model):
         print("Model {} failed".format(Model.name))
         print()
 
-for Model in Mods:
-    if Model.ensembled:
-        EnsembledMods.append(Model) # wait until other models are done for ensembles
-    else:
-        build_and_submit_model(Model)
-for Model in EnsembledMods:
-    build_and_submit_model(Model)
+for Model in model_modules:
+    if not Model.ensembled: build_and_submit_model(Model)
+for Model in model_modules:
+    if Model.ensembled: build_and_submit_model(Model)

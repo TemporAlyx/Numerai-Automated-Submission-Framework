@@ -2,3 +2,5 @@ live_datasets/*
 train_datasets/*
 Models/__pycache__/*
 config.json
+Submissions/*
+Validations/*
