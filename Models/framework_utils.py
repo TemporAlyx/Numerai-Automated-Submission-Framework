@@ -72,11 +72,11 @@ def get_napi_and_models(public_id, secret_key):
 
 
 train_files = ['train_int8.parquet', 'validation_int8.parquet',
-         'validation_example_preds.parquet',
-         'features.json', 'meta_model.parquet'] 
+         'validation_example_preds.parquet', 'validation_benchmark_models.parquet',
+         'features.json', 'meta_model.parquet', 'live_example_preds.parquet'] 
 
 live_files = ['live_int8.parquet', 'live_example_preds.parquet',
-               'features.json']
+               'features.json', 'live_benchmark_models.parquet']
 
 def chk_rm_ds(ds_file, dataset_loc):
     fp = os.path.join(dataset_loc, ds_file)
@@ -179,6 +179,7 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
                         print("Failed to upload predictions for "+upload)
                         # remove failed submission file
                         os.remove("Submissions/"+subName)
+                        break
                     print("Upload for "+upload+" failed, retrying... ",end="")
                     time.sleep(4)
             if verbose > 0: print(upload_key)

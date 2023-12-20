@@ -29,7 +29,7 @@ with open(os.path.join(dataset_loc, "features.json"), "r") as f:
 feature_sets = feature_metadata['feature_sets']
 
 BLP = pd.read_parquet(os.path.join(dataset_loc, 'live_benchmark_models.parquet'),engine="fastparquet")
-ids = BLP.index.values
+ids = live.index.values
 
 gc.collect()
 print("done")
