@@ -73,7 +73,7 @@ def get_napi_and_models(public_id, secret_key):
 
 train_files = ['train_int8.parquet', 'validation_int8.parquet',
          'validation_example_preds.parquet', 'validation_benchmark_models.parquet',
-         'features.json', 'meta_model.parquet', 'live_example_preds.parquet'] 
+         'features.json', 'meta_model.parquet'] 
 
 live_files = ['live_int8.parquet', 'live_example_preds.parquet',
                'features.json', 'live_benchmark_models.parquet']
