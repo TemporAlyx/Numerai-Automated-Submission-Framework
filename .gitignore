@@ -4,3 +4,4 @@ Models/__pycache__/*
 config.json
 Submissions/*
 Validations/*
+venv/*
