@@ -1,44 +1,24 @@
-import numpy as np
 import os, gc
-
-from Models.framework_utils import *
+import numpy as np
+from Models.diagnostic_utils import *
 
 import lightgbm
 
+name = os.path.splitext(os.path.basename(__file__))[0] # use filename as model name
+submit_on = ['yourmodelnamehere'] # list of numerai model names to submit predictions corrsponding to each column of P
+ensembled = False # set to True if model is an ensemble of other models, ie, requires submissions
+trained_on = "9-8-2023" # date model was trained on, in format "m-d-yyyy", leave as None if unknown or not applicable
+modeldata_directory = os.path.join(os.getcwd(), 'Models', 'Modeldata') # directory to store model data in
 
-class CustomModel:
-    name = os.path.splitext(os.path.basename(__file__))[0] # use filename as model name
-    submit_on = ['your_model_name_here']
-    ensembled = False
-    modeldata_directory = os.path.join(os.getcwd(), 'Models', 'Modeldata')
-    
-    isLoaded = False
-    modeldata = {}
-        
-    @classmethod
-    def load(cls):
-        cls.modeldata['lgbm_model'] = lightgbm.Booster(model_file=os.path.join(cls.modeldata_directory, 'lgbm_model.txt'))
-        cls.modeldata['features'] = np.load(os.path.join(cls.modeldata_directory, 'lgbm_model_features.npy'))
-        cls.isLoaded = True
-    
-    @classmethod
-    def predict(cls, X, I, features, submissions=None, clear=True):
-        if not cls.isLoaded:
-            cls.load()
-                
-        X = X[cls.modeldata['features']]
+def predict(X, I, feature_sets, submissions=None):
+    lgbm_model = lightgbm.Booster(model_file=os.path.join(modeldata_directory, 'lgbm_model.txt'))
+    features = np.load(os.path.join(modeldata_directory, 'lgbm_model_features.npy'))
+    X = X[features]
 
-        # predict
-        P = []
-        for E in range(len(I)): # note: X will have to be rescaled from 0-4 if not trained as such!
-            P.append(cls.modeldata['lgbm_model'].predict(X.iloc[I[E]].values.astype(np.float32)))
-        P = np.concatenate(P, axis=-1)
+    P = []
+    for E in range(len(I)): # note: X will have to be rescaled from int 0-4 if not trained as such!
+        P.append(lgbm_model.predict(X.iloc[I[E]].values.astype(np.float32)))
+    P = np.concatenate(P, axis=-1).reshape(-1, 1)
 
-        if clear: cls.clear()
-        return P
-
-    @classmethod
-    def clear(cls):
-        cls.modeldata = {}
-        cls.isLoaded = False
-        gc.collect()
+    gc.collect()
+    return P

@@ -45,7 +45,7 @@ def get_numerapi_config():
         if config['id'] == '' or config['key'] == '':
             print('Please enter your Numerai ID and Key in config.json and restart')
             time.sleep(5)
-            sys.exit()
+            exit()
         else:
             public_id = config['id']
             secret_key = config['key']
@@ -65,18 +65,28 @@ def get_napi_and_models(public_id, secret_key):
             loops += 1
             if loops > 10:
                 print("NumerAPI connection failed, exiting...")
-                sys.exit(); # maybe add some email notification here?
+                exit(); # maybe add some email notification here?
             print("NumerAPI connection failed, retrying...")
             time.sleep(5)
     return napi, modelnameids
 
 
 train_files = ['train_int8.parquet', 'validation_int8.parquet',
-         'validation_example_preds.parquet',
+         'validation_example_preds.parquet', 'validation_benchmark_models.parquet',
          'features.json', 'meta_model.parquet'] 
 
 live_files = ['live_int8.parquet', 'live_example_preds.parquet',
-               'features.json']
+               'features.json', 'live_benchmark_models.parquet']
+
+def chk_depreciate_ds(ds_file, dataset_loc):
+    fp = os.path.join(dataset_loc, ds_file)
+    if os.path.exists(fp):
+        os.rename(fp, fp+'.old')
+
+def chk_reinstate_ds(ds_file, dataset_loc):
+    fp = os.path.join(dataset_loc, ds_file)
+    if os.path.exists(fp+'.old'):
+        os.rename(fp+'.old', fp)
 
 def chk_rm_ds(ds_file, dataset_loc):
     fp = os.path.join(dataset_loc, ds_file)
@@ -93,12 +103,13 @@ def get_update_data(napi, dataset_loc, ds_version, files):
     currentRound = napi.get_current_round()
     with open(os.path.join(dataset_loc, 'lastRoundAcq.txt'), 'r') as f:
         lastRound = int(f.read())
+    any_data_failure = False
     newRound = lastRound != currentRound
     if newRound:
         print('Dataset not up to date, retrieving dataset... ',end='')
         for ds_file in files: 
             if currentRound - lastRound > 5 or 'train' not in ds_file: # avoid redownloading train too often
-                chk_rm_ds(ds_file, dataset_loc)
+                chk_depreciate_ds(ds_file, dataset_loc)
         print('done')
         print('downloading new files... ',end='')
         for ds_file in files: 
@@ -112,15 +123,21 @@ def get_update_data(napi, dataset_loc, ds_version, files):
                     except:
                         loops += 1
                         if loops > 5:
-                            print('Numerapi data download failed')
-                            break
+                            print('Numerapi data download failed, reverting to old file.')
+                            chk_reinstate_ds(ds_file, dataset_loc)
+                            any_data_failure = True
                         print('Numerapi data download error, retrying...')
                         time.sleep(5)
+                if napi_success:
+                    chk_rm_ds(ds_file+'.old', dataset_loc)
         print('done')
         clear_output()
-        with open(dataset_loc + '/lastRoundAcq.txt', 'w') as f:
-            f.write(str(currentRound))
-    print("Datasets are up to date.\nCurrent Round:", currentRound)
+        if not any_data_failure: # if any data failed, don't update lastRoundAcq, so it will try again next time
+            with open(dataset_loc + '/lastRoundAcq.txt', 'w') as f:
+                f.write(str(currentRound))
+            print("Datasets are up to date.\nCurrent Round:", currentRound)
+        else:
+            print("Some Datasets failed to update, submissions may fail.\nCurrent Round:", currentRound)
     return currentRound, newRound
 
 def get_update_training_data(napi, dataset_loc, ds_version):
@@ -130,15 +147,15 @@ def get_update_live_data(napi, dataset_loc, ds_version):
     return get_update_data(napi, dataset_loc, ds_version, live_files)
 
 
-def processData(df_loc, return_fts=False):
+def processData(df_loc, return_target_names=False):
     df = pd.read_parquet(df_loc, engine="fastparquet")
     E = df['era'].values; uE = pd.unique(E)
     I = [(np.arange(len(E), dtype=np.int64)[x==E]) for x in uE]
-    features = [f for f in list(df.iloc[0].index) if "feature" in f]
+    # features = [f for f in list(df.iloc[0].index) if "feature" in f]
     targets = [f for f in list(df.iloc[0].index) if "target" in f]
     # df = df[features+targets]; df = df.to_numpy(dtype=np.float16, na_value=0.5)
     # X = df[:,:-len(targets)]; Y = df[:,-len(targets):]; del df; gc.collect()
-    if return_fts: return df, I, features, targets
+    if return_target_names: return df, I, targets
     return df, I
 
 
@@ -160,7 +177,7 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
         joined = pd.DataFrame(liveids, columns=['id']).join(results_df)
         if verbose > 1: print(joined.head(3))
 
-        subName = "submission"+name+"_"+upload[:5]+"_"+str(currentRound)+".csv"
+        subName = "submission_"+name+"_"+upload+"_"+str(currentRound)+".csv"
         if verbose > 0: print("# Writing predictions to "+subName+"... ",end="")
         joined.to_csv("Submissions/"+subName, index=False)
         upload_key = None
@@ -179,38 +196,79 @@ def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=
                         print("Failed to upload predictions for "+upload)
                         # remove failed submission file
                         os.remove("Submissions/"+subName)
+                        break
                     print("Upload for "+upload+" failed, retrying... ",end="")
                     time.sleep(4)
             if verbose > 0: print(upload_key)
-        submissions[upload] = joined
+        submissions[upload] = LP[:,i]
         response_keys[upload] = upload_key
         if verbose > 1: print("done")
     return submissions, response_keys
 
-def get_currentRound_submissions(currentRound, modelnameids, modelmodules):
+
+def get_currentRound_submissions(currentRound, modelmodules, avoid_resubmissions=True):
+    submissions = {}
     if not os.path.exists('Submissions'): 
         os.makedirs('Submissions')
-        subs = []
     else:
-        subs = os.listdir('Submissions')
-        sub_files = [x for x in subs if str(currentRound) in x and 'submission' in x]
-        subs = [x.split('_')[:-1] for x in sub_files]
-        subs = [x[-2:] if len(x) > 2 else x for x in subs]
-        for i in range(len(subs)):
-            subs[i][0] = subs[i][0][10:]
-            subs[i].append(sub_files[i])
-        subs = np.array(subs)
+        sub_files = os.listdir('Submissions')
+        sub_files = [x for x in sub_files if str(currentRound) in x and 'submission' in x]
+        sub_names = [x.split('_')[1:-1] for x in sub_files]
+        for i in range(len(sub_names)):
+            sub_name = sub_names[i]
+            model_name, upload_name = sub_name[0], sub_name[1]
     
-    submissions = {}
-    for i in range(len(subs)):
-        d = pd.read_csv('Submissions\\'+subs[i][-1], header=0).values[:,1].astype(float)
-        if len(subs[i][1]) > 0:
-            full_name = [x for x in list(modelnameids.keys()) if subs[i][1] == x[:len(subs[i][1])]][0]
-        else:
-            full_name = subs[i][0]
-        submissions[full_name] = d
+            d = pd.read_csv('Submissions\\'+sub_files[i], header=0).values[:,1].astype(float)
+            submissions[upload_name] = d
         
-        if subs[i][0] in modelmodules:
-            modelmodules.remove(subs[i][0])
-
+    if avoid_resubmissions:
+        remove = []
+        for model in modelmodules:
+            if all([upload_name in submissions.keys() for upload_name in model.submit_on]):
+                remove.append(model)
+        for model in remove:
+            modelmodules.remove(model)
     return submissions, modelmodules
+
+
+def get_validation_predictions():
+    predictions = {}
+    if not os.path.exists('Validations'): 
+        os.makedirs('Validations')
+    else:
+        sub_files = os.listdir('Validations')
+        sub_files = [x for x in sub_files if 'validation' in x]
+        sub_names = [x.split('_')[1:] for x in sub_files]
+        for i in range(len(sub_names)):
+            sub_name = sub_names[i]
+            model_name, upload_name = sub_name[0], sub_name[1]
+    
+            d = pd.read_csv('Submissions\\'+sub_files, header=0).values[:,1].astype(float)
+            predictions[sub_name] = d
+    return predictions
+
+
+def saveValidationPredictions(P, Model, ids, verbose=2):
+    name = Model.name
+    sub_names = Model.submit_on
+    if type(sub_names) != list: 
+        sub_names = [sub_names]; P = P.reshape(-1, 1)
+    elif len(P.shape) == 1:
+        P = P.reshape(-1, 1)
+    print('saving validation predictions for', name, sub_names)
+
+    predictions = {}
+
+    for i in range(len(sub_names)):
+        upload = sub_names[i]
+        results_df = pd.DataFrame(data={'prediction' : P[:,i]})
+        joined = pd.DataFrame(ids, columns=['id']).join(results_df)
+        if verbose > 1: print(joined.head(3))
+
+        subName = "validation_"+name+"_"+upload+".csv"
+        if verbose > 0: print("# Writing predictions to "+subName+"... ",end="")
+        joined.to_csv("Validations/"+subName, index=False)
+        predictions[upload] = joined
+        if verbose > 1: print("done")
+
+    return predictions

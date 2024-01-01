@@ -15,31 +15,21 @@ ds_version = "v4.2"
 dataset_loc = os.path.join(os.getcwd(), 'live_datasets', ds_version)
 currentRound, isnewRound = get_update_live_data(napi, dataset_loc, ds_version)
 
-# if not isnewRound:
-#     sys.exit()
+if not isnewRound:
+    sys.exit()
 
 np.random.seed(42)
 print("# Loading data... ",end='')
 
 # live submission data L* | X = features, P = prediction, I = era indices
-live, LI, features, targets = processData(os.path.join(dataset_loc, 'live_int8.parquet'), return_fts=True)
+live, LI = processData(os.path.join(dataset_loc, 'live_int8.parquet'))
 
 with open(os.path.join(dataset_loc, "features.json"), "r") as f:
     feature_metadata = json.load(f)
-    
-small_features = feature_metadata['feature_sets']['small']
-medium_features = feature_metadata['feature_sets']['medium']
-fncv3_features = feature_metadata['feature_sets']['fncv3_features']
-serenity_features = feature_metadata['feature_sets']['serenity']
+feature_sets = feature_metadata['feature_sets']
 
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'small_features.npy'), small_features)
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'medium_features.npy'), medium_features)
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'fncv3_features.npy'), fncv3_features)
-np.save(os.path.join(os.getcwd(), 'Models', 'Modeldata', 'serenity_features.npy'), serenity_features)
-
-ELP = pd.read_parquet(os.path.join(dataset_loc, 'live_example_preds.parquet'), engine="fastparquet")
-ids = ELP.index.values
-ELP = ELP.values[:,0]
+BLP = pd.read_parquet(os.path.join(dataset_loc, 'live_benchmark_models.parquet'),engine="fastparquet")
+ids = live.index.values
 
 gc.collect()
 print("done")
@@ -49,27 +39,24 @@ import Models
 
 submissions = {}
 upload_keys = {}
-EMods = []
 
-submissions['example_model'] = ELP
+submissions['example_model'] = BLP['v42_teager_plus_cyrus']
 
-model_modules = Models.models
+model_modules = [Models.__dict__[x] for x in Models.models]
 
-n_submissions, model_modules = get_currentRound_submissions(
-    currentRound, modelnameids, model_modules
-)
+n_submissions, model_modules = get_currentRound_submissions(currentRound, model_modules,
+                                                            avoid_resubmissions=True)
 submissions.update(n_submissions)
 
-Mods = [Models.__dict__[x].CustomModel for x in model_modules]
-print(model_modules)
+print([x.name for x in model_modules])
 
 
 def build_and_submit_model(Model):
     try:
         if Model.ensembled:
-            LP = Model.predict(live, LI, features, submissions)
+            LP = Model.predict(live, LI, feature_sets, submissions)
         else:
-            LP = Model.predict(live, LI, features)
+            LP = Model.predict(live, LI, feature_sets)
         LP = erarank01(LP, LI)
 
         n_submissions, n_response_keys = submitPredictions(
@@ -83,18 +70,7 @@ def build_and_submit_model(Model):
         print("Model {} failed".format(Model.name))
         print()
 
-for Model in Mods:
-    if Model.ensembled:
-        EMods.append(Model) # wait until other models are done for ensembles
-    else:
-        build_and_submit_model(Model)
-        
-# reload saved submissions for ensembles
-submissions['example_model'] = ELP
-n_submissions, model_modules = get_currentRound_submissions(
-    currentRound, modelnameids, model_modules
-)
-submissions.update(n_submissions)
-
-for Model in EMods:
-    build_and_submit_model(Model)
+for Model in model_modules:
+    if not Model.ensembled: build_and_submit_model(Model)
+for Model in model_modules:
+    if Model.ensembled: build_and_submit_model(Model)
