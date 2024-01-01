@@ -45,7 +45,7 @@ def get_numerapi_config():
         if config['id'] == '' or config['key'] == '':
             print('Please enter your Numerai ID and Key in config.json and restart')
             time.sleep(5)
-            sys.exit()
+            exit()
         else:
             public_id = config['id']
             secret_key = config['key']
@@ -65,7 +65,7 @@ def get_napi_and_models(public_id, secret_key):
             loops += 1
             if loops > 10:
                 print("NumerAPI connection failed, exiting...")
-                sys.exit(); # maybe add some email notification here?
+                exit(); # maybe add some email notification here?
             print("NumerAPI connection failed, retrying...")
             time.sleep(5)
     return napi, modelnameids
@@ -77,6 +77,16 @@ train_files = ['train_int8.parquet', 'validation_int8.parquet',
 
 live_files = ['live_int8.parquet', 'live_example_preds.parquet',
                'features.json', 'live_benchmark_models.parquet']
+
+def chk_depreciate_ds(ds_file, dataset_loc):
+    fp = os.path.join(dataset_loc, ds_file)
+    if os.path.exists(fp):
+        os.rename(fp, fp+'.old')
+
+def chk_reinstate_ds(ds_file, dataset_loc):
+    fp = os.path.join(dataset_loc, ds_file)
+    if os.path.exists(fp+'.old'):
+        os.rename(fp+'.old', fp)
 
 def chk_rm_ds(ds_file, dataset_loc):
     fp = os.path.join(dataset_loc, ds_file)
@@ -93,12 +103,13 @@ def get_update_data(napi, dataset_loc, ds_version, files):
     currentRound = napi.get_current_round()
     with open(os.path.join(dataset_loc, 'lastRoundAcq.txt'), 'r') as f:
         lastRound = int(f.read())
+    any_data_failure = False
     newRound = lastRound != currentRound
     if newRound:
         print('Dataset not up to date, retrieving dataset... ',end='')
         for ds_file in files: 
             if currentRound - lastRound > 5 or 'train' not in ds_file: # avoid redownloading train too often
-                chk_rm_ds(ds_file, dataset_loc)
+                chk_depreciate_ds(ds_file, dataset_loc)
         print('done')
         print('downloading new files... ',end='')
         for ds_file in files: 
@@ -112,15 +123,21 @@ def get_update_data(napi, dataset_loc, ds_version, files):
                     except:
                         loops += 1
                         if loops > 5:
-                            print('Numerapi data download failed')
-                            break
+                            print('Numerapi data download failed, reverting to old file.')
+                            chk_reinstate_ds(ds_file, dataset_loc)
+                            any_data_failure = True
                         print('Numerapi data download error, retrying...')
                         time.sleep(5)
+                if napi_success:
+                    chk_rm_ds(ds_file+'.old', dataset_loc)
         print('done')
         clear_output()
-        with open(dataset_loc + '/lastRoundAcq.txt', 'w') as f:
-            f.write(str(currentRound))
-    print("Datasets are up to date.\nCurrent Round:", currentRound)
+        if not any_data_failure: # if any data failed, don't update lastRoundAcq, so it will try again next time
+            with open(dataset_loc + '/lastRoundAcq.txt', 'w') as f:
+                f.write(str(currentRound))
+            print("Datasets are up to date.\nCurrent Round:", currentRound)
+        else:
+            print("Some Datasets failed to update, submissions may fail.\nCurrent Round:", currentRound)
     return currentRound, newRound
 
 def get_update_training_data(napi, dataset_loc, ds_version):
