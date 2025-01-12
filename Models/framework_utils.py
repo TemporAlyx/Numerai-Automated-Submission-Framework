@@ -71,11 +71,14 @@ def get_napi_and_models(public_id, secret_key):
     return napi, modelnameids
 
 
-train_files = ['train_int8.parquet', 'validation_int8.parquet',
+train_files = [
+    'train.parquet', 'validation.parquet',
          'validation_example_preds.parquet', 'validation_benchmark_models.parquet',
-         'features.json', 'meta_model.parquet'] 
+         'features.json', 
+        #  'meta_model.parquet'
+         ] 
 
-live_files = ['live_int8.parquet', 'live_example_preds.parquet',
+live_files = ['live.parquet', 'live_example_preds.parquet',
                'features.json', 'live_benchmark_models.parquet']
 
 def chk_depreciate_ds(ds_file, dataset_loc):
@@ -95,12 +98,14 @@ def chk_rm_ds(ds_file, dataset_loc):
 def get_update_data(napi, dataset_loc, ds_version, files):
     if not os.path.exists(dataset_loc):
         os.makedirs(dataset_loc)
-
-        with open(os.path.join(dataset_loc,'lastRoundAcq.txt'), 'w') as f:
-            f.write('0')
         print('Created dataset directory at', dataset_loc)
     
     currentRound = napi.get_current_round()
+    # check if txt file is there
+    if not os.path.exists(os.path.join(dataset_loc, 'lastRoundAcq.txt')):
+        with open(os.path.join(dataset_loc,'lastRoundAcq.txt'), 'w') as f:
+            f.write('0')
+        print('Created lastRoundAcq.txt')
     with open(os.path.join(dataset_loc, 'lastRoundAcq.txt'), 'r') as f:
         lastRound = int(f.read())
     any_data_failure = False
@@ -126,6 +131,7 @@ def get_update_data(napi, dataset_loc, ds_version, files):
                             print('Numerapi data download failed, reverting to old file.')
                             chk_reinstate_ds(ds_file, dataset_loc)
                             any_data_failure = True
+                            break
                         print('Numerapi data download error, retrying...')
                         time.sleep(5)
                 if napi_success:
@@ -155,8 +161,10 @@ def processData(df_loc, return_target_names=False):
     targets = [f for f in list(df.iloc[0].index) if "target" in f]
     # df = df[features+targets]; df = df.to_numpy(dtype=np.float16, na_value=0.5)
     # X = df[:,:-len(targets)]; Y = df[:,-len(targets):]; del df; gc.collect()
-    if return_target_names: return df, I, targets
-    return df, I
+    if return_target_names: 
+        return df, I, targets
+    else:
+        return df, I
 
 
 def submitPredictions(LP, Model, modelids, liveids, currentRound, napi, verbose=2):
@@ -243,7 +251,7 @@ def get_validation_predictions():
             sub_name = sub_names[i]
             model_name, upload_name = sub_name[0], sub_name[1]
     
-            d = pd.read_csv('Submissions\\'+sub_files, header=0).values[:,1].astype(float)
+            d = pd.read_csv('Submissions\\'+sub_files[i], header=0).values[:,1].astype(float)
             predictions[sub_name] = d
     return predictions
 

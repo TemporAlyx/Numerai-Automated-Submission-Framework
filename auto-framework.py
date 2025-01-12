@@ -11,18 +11,26 @@ public_id, secret_key = get_numerapi_config()
 napi, modelnameids = get_napi_and_models(public_id, secret_key)
 
 # load data
-ds_version = "v4.2"
+ds_version = "v5.0"
 dataset_loc = os.path.join(os.getcwd(), 'live_datasets', ds_version)
 currentRound, isnewRound = get_update_live_data(napi, dataset_loc, ds_version)
 
-if not isnewRound:
-    sys.exit()
+time_slept = 0
+while not isnewRound:
+    time.sleep(1800)
+    time_slept += 1800
+    ncurrentRound, isnewRound = get_update_live_data(napi, dataset_loc, ds_version)
+    if ncurrentRound != currentRound:
+        currentRound = ncurrentRound
+        break
+    if time_slept >= (3600 * 23):
+        sys.exit()
 
 np.random.seed(42)
 print("# Loading data... ",end='')
 
 # live submission data L* | X = features, P = prediction, I = era indices
-live, LI = processData(os.path.join(dataset_loc, 'live_int8.parquet'))
+live, LI = processData(os.path.join(dataset_loc, 'live.parquet'), return_target_names=False)
 
 with open(os.path.join(dataset_loc, "features.json"), "r") as f:
     feature_metadata = json.load(f)
@@ -40,7 +48,7 @@ import Models
 submissions = {}
 upload_keys = {}
 
-submissions['example_model'] = BLP['v42_teager_plus_cyrus']
+submissions['example_model'] = BLP['v5_lgbm_ct_blend'].values[:,None]
 
 model_modules = [Models.__dict__[x] for x in Models.models]
 
@@ -50,9 +58,9 @@ submissions.update(n_submissions)
 
 print([x.name for x in model_modules])
 
-
 def build_and_submit_model(Model):
     try:
+        print("Building and Processing model {}...".format(Model.name))
         if Model.ensembled:
             LP = Model.predict(live, LI, feature_sets, submissions)
         else:

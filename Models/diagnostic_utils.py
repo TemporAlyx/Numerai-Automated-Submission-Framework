@@ -14,7 +14,7 @@ def simple_corr(preds, targs): # ~pearson correlation
     sumdms = np.sum(preds_dm * targs_dm)
     sumsqrs = np.sqrt(np.sum(preds_dm ** 2) * np.sum(targs_dm ** 2))
 
-    return sumdms / sumsqrs
+    return sumdms / (np.nan_to_num(sumsqrs) + 1e-8)
 
 def rank_corr(preds_ur, targs_ur): # ~spearman correlation
     preds = rank01(preds_ur)
@@ -26,7 +26,7 @@ def rank_corr(preds_ur, targs_ur): # ~spearman correlation
     sumdms = np.sum(preds_dm * targs_dm)
     sumsqrs = np.sqrt(np.sum(preds_dm ** 2) * np.sum(targs_dm ** 2))
 
-    return sumdms / sumsqrs
+    return sumdms / (np.nan_to_num(sumsqrs) + 1e-8)
 
 
 def numerai_corr(preds, target):
@@ -55,29 +55,19 @@ def col_corr(preds, targs): # ~pearson correlation, optimized for multiple colum
     prod = np.sum(ddiffs * idiff, axis=0)
     ddiffs2 = np.sum(np.square(ddiffs), axis=0)
     
-    return prod / np.sqrt(ddiffs2 * idiff2)
+    return prod / (np.nan_to_num(np.sqrt(ddiffs2 * idiff2)) + 1e-8)
 
 def neutralize(target, by, proportion=1.0):
     by = by - np.mean(by)
     target = target - np.mean(target)
     scores = target - (proportion * by.dot(np.linalg.pinv(by).dot(target)))
-    return scores / scores.std()
-
-# def tf_neutralize(target, data):
-#     data = data - tf.reduce_mean(data, axis=-2, keepdims=True)
-#     target = target - tf.reduce_mean(target, axis=-2, keepdims=True)
-#     invexp = tf.cast(tf.linalg.pinv(tf.cast(data, tf.float32)), target.dtype)
-#     diff = tf.matmul(data,tf.matmul(invexp,target))
-#     scores = target - diff
-#     return scores / tf.math.reduce_std(scores)
+    return scores / (np.nan_to_num(scores.std()) + 1e-8)
 
 def era_neutralize(target, by, I, proportion=1.0):
-    out = np.empty(len(target))
+    out = np.empty(target.shape)
     for E in I:
         targeti = target[E]; byi = by[E]
-        exposures = np.hstack((byi, np.repeat(np.mean(targeti)), len(byi).reshape(-1, 1)))
-        scores = target - (proportion * exposures.dot(np.linalg.pinv(exposures).dot(targeti)))
-        out[E] = scores / scores.std()
+        out[E] = neutralize(targeti, byi, proportion)
     return out
 
 def sortino_ratio(x, target=.02):
@@ -91,8 +81,23 @@ def drawdown(x):
         if running > max_val:
             max_val = running
         else:
-            if (running / max_val)-1 < dd:
-                dd = (running / max_val)-1
+            ndd = (running / max_val) - 1
+            if ndd < dd:
+                dd = ndd
+    return dd
+
+def wkly_stake_drawdown(x):
+    stake = [1.0, 1.0, 1.0, 1.0]
+    max_val = 1.0; running = 1.0; dd = 0
+    for i in x:
+        stake.append(max(stake[-1] + (stake[-4] * max(min(i, 0.25), -0.25)), 0.0))
+        running = stake[-1]
+        if running > max_val:
+            max_val = running
+        else:
+            ndd = (running / max_val) - 1
+            if ndd < dd:
+                dd = ndd
     return dd
 
 def ts_stats(ts,name=''):
@@ -100,8 +105,10 @@ def ts_stats(ts,name=''):
     diagnostics[name+' mean'] = np.nanmean(ts); diagnostics[name+' sdev'] = np.nanstd(ts)
     diagnostics[name+' sharpe'] = diagnostics[name+' mean'] / diagnostics[name+' sdev']; 
     diagnostics[name+' sortino (-0.02)'] = sortino_ratio(ts, 0.02)
-    diagnostics[name+' drawdown'] = drawdown(ts)
+    # diagnostics[name+' drawdown'] = drawdown(ts)
+    diagnostics[name+' staked drawdown'] = wkly_stake_drawdown(ts)
     return diagnostics
+    
     
 #  P - predictions, Y - true target, X - base dimensions, I - era indexing
 def run_diagnostics(P,Y,X,I, featexp=False, fnc=True, print_output=True, graph_corrs=True, compare=None):
@@ -135,6 +142,13 @@ def run_diagnostics(P,Y,X,I, featexp=False, fnc=True, print_output=True, graph_c
             raw_corrs[k+' corr (targs)'] = ces
             diagnostics[k+' corr (targs) mean'] = np.nanmean(ces)
             diagnostics[k+' corr (targs) sdev'] = np.nanstd(ces)
+            ces = np.empty(len(I))
+            for i in range(len(ces)): ces[i] = simple_corr(neutralize(P[I[i]].reshape(-1,1),v[I[i]].reshape(-1,1)),Y[I[i]])
+            raw_corrs[k+' neut corr (mmc)'] = ces
+            diagnostics.update(ts_stats(ces,k+' neut corr (mmc)'))
+            # add comparison multipliers, note: will overwrite and only use last one
+            raw_corrs['0.5xCorr 2xMMC'] = (raw_corrs['corrv2'] * 0.5) + (raw_corrs[k+' neut corr (mmc)'] * 2.0)
+            diagnostics.update(ts_stats(raw_corrs['0.5xCorr 2xMMC'],'0.5xCorr 2xMMC'))
     if print_output:
         for k,v in diagnostics.items(): print(k,':',round(v,6))
     if graph_corrs:
@@ -146,11 +160,28 @@ def run_diagnostics(P,Y,X,I, featexp=False, fnc=True, print_output=True, graph_c
         plt.legend()
         plt.show()
 
-        # add a second plot with cumulative 1xcorr returns
+        # add a second plot with cumulative returns
         plt.figure(figsize=(14,6))
-        for k,v in raw_corrs.items(): plt.plot(np.cumsum(v), label=k)
-        # add a zero line
-        plt.plot([0,len(I)],[0,0], color='white', linestyle='--')
+        for k,v in raw_corrs.items(): 
+            stake = [1.0, 1.0, 1.0, 1.0]
+            for i in range(len(v)):
+                stake.append(max(stake[-1] + (stake[-4] * max(min(v[i], 0.25), -0.25)), 0.0))
+            plt.plot(stake[3:], label=k)
+        # make plot log scale
+        plt.yscale('log')
+        plt.legend()
+        plt.show()
+
+        # add a third plot only 1 year cumulative returns
+        plt.figure(figsize=(14,6))
+        for k,v in raw_corrs.items(): 
+            v52 = v[-52:]
+            stake = [1.0, 1.0, 1.0, 1.0]
+            for i in range(len(v52)):
+                stake.append(max(stake[-1] + (stake[-4] * max(min(v52[i], 0.25), -0.25)), 0.0))
+            plt.plot(stake[3:], label=k)
+        # make plot log scale
+        plt.yscale('log')
         plt.legend()
         plt.show()
 

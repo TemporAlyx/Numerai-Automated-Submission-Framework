@@ -18,7 +18,7 @@ def predict(X, I, feature_sets, submissions=None):
     P = []
     for E in range(len(I)): # note: X will have to be rescaled from int 0-4 if not trained as such!
         P.append(lgbm_model.predict(X.iloc[I[E]].values.astype(np.float32)))
-    P = np.concatenate(P, axis=-1).reshape(-1, 1)
+    P = np.concatenate(P, axis=0).reshape(-1, 1)
 
     gc.collect()
     return P
